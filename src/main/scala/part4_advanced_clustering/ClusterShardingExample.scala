@@ -1,17 +1,21 @@
 package part4_advanced_clustering
 
-import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props}
+import akka.actor.{Actor, ActorLogging, ActorRef, ActorSystem, Props, ReceiveTimeout}
+import akka.cluster.sharding.ShardRegion.Passivate
 import akka.cluster.sharding.{ClusterSharding, ClusterShardingSettings, ShardRegion}
 import com.typesafe.config.ConfigFactory
 
 import java.util.{Date, UUID}
 import scala.collection.immutable
 import scala.util.Random
+import scala.concurrent.duration._
 
 case class OysterCard(id: String, amount: Double)
 case class EntryAttempt(oysterCard: OysterCard, date: Date)
 case object EntryAccepted
 case class EntryRejected(reason: String)
+// passivate message
+case object TerminateValidator
 
 /////////////////////////
 // Actors
@@ -35,6 +39,7 @@ class OysterCardValidator extends Actor with ActorLogging {
   override def preStart(): Unit = {
     super.preStart()
     log.info("Validator starting...")
+    context.setReceiveTimeout(10 seconds)
   }
 
   override def receive: Receive = {
@@ -42,6 +47,11 @@ class OysterCardValidator extends Actor with ActorLogging {
       log.info(s"Validating ${card}")
       if(amount > 2.5) sender() ! EntryAccepted
       else sender() ! EntryRejected(s"[${id}] not enough funds, please top up")
+    case ReceiveTimeout =>
+      context.parent ! Passivate(TerminateValidator)
+    case TerminateValidator =>
+      // I am sure that I won't be contacted again so safe to stop
+      context.stop(self)
   }
 }
 
